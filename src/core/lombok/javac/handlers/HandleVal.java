@@ -28,6 +28,7 @@ import lombok.ConfigurationKeys;
 import lombok.val;
 import lombok.core.HandlerPriority;
 import lombok.var;
+import lombok.javac.Javac;
 import lombok.javac.JavacASTAdapter;
 import lombok.javac.JavacASTVisitor;
 import lombok.javac.JavacNode;
@@ -114,6 +115,11 @@ public class HandleVal extends JavacASTAdapter {
 		if (!localNode.shouldDeleteLombokAnnotations()) {
 			JCAnnotation valAnnotation = recursiveSetGeneratedBy(localNode.getTreeMaker().Annotation(local.vartype, List.<JCExpression>nil()), typeNode);
 			local.mods.annotations = local.mods.annotations == null ? List.of(valAnnotation) : local.mods.annotations.append(valAnnotation);
+		}
+		
+		if (Javac.getJavaCompilerVersion() >= 10) {
+			local.vartype = null;
+			return;
 		}
 		
 		if (JavacResolution.platformHasTargetTyping()) {
