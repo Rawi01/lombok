@@ -29,6 +29,7 @@ import lombok.core.configuration.ConfigurationKey;
 import lombok.core.configuration.FlagUsageType;
 import lombok.core.configuration.IdentifierName;
 import lombok.core.configuration.LogDeclaration;
+import lombok.core.configuration.MetaAnnotation;
 import lombok.core.configuration.NullAnnotationLibrary;
 import lombok.core.configuration.NullCheckExceptionType;
 import lombok.core.configuration.TypeName;
@@ -694,5 +695,7 @@ public class ConfigurationKeys {
 	 * checkerframework.org version will be generated.
 	 */
 	public static final ConfigurationKey<CheckerFrameworkVersion> CHECKER_FRAMEWORK = new ConfigurationKey<CheckerFrameworkVersion>("checkerframework", "If set with the version of checkerframework.org (in major.minor, or just 'true' for the latest supported version), create relevant checkerframework.org annotations for code lombok generates (default: false).") {};
+
+	public static final ConfigurationKey<List<MetaAnnotation>> META_ANNOTATION = new ConfigurationKey<List<MetaAnnotation>>("lombok.metaAnnotations", "List of meta annos") {};
 
 }
