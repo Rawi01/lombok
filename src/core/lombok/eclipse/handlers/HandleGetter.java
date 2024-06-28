@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2022 The Project Lombok Authors.
+ * Copyright (C) 2009-2024 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -147,6 +147,9 @@ public class HandleGetter extends EclipseAnnotationHandler<Getter> {
 		if (node == null) return;
 		
 		List<Annotation> onMethod = unboxAndRemoveAnnotationParameter(ast, "onMethod", "@Getter(onMethod", annotationNode);
+		if (!onMethod.isEmpty()) {
+			handleFlagUsage(annotationNode, ConfigurationKeys.ON_X_FLAG_USAGE, "@Getter(onMethod=...)");
+		}
 		
 		switch (node.getKind()) {
 		case FIELD:
@@ -323,7 +326,7 @@ public class HandleGetter extends EclipseAnnotationHandler<Getter> {
 		TYPE_MAP = Collections.unmodifiableMap(m);
 	}
 	
-	private static char[] valueName = "value".toCharArray();
+	private static char[] valueName = "$value".toCharArray();
 	private static char[] actualValueName = "actualValue".toCharArray();
 	
 	private static final int PARENTHESIZED = (1 << ASTNode.ParenthesizedSHIFT) & ASTNode.ParenthesizedMASK;

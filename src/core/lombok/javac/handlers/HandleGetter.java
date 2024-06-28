@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2022 The Project Lombok Authors.
+ * Copyright (C) 2009-2024 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -144,6 +144,9 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		if (node == null) return;
 		
 		List<JCAnnotation> onMethod = unboxAndRemoveAnnotationParameter(ast, "onMethod", "@Getter(onMethod", annotationNode);
+		if (!onMethod.isEmpty()) {
+			handleFlagUsage(annotationNode, ConfigurationKeys.ON_X_FLAG_USAGE, "@Getter(onMethod=...)");
+		}
 		
 		switch (node.getKind()) {
 		case FIELD:
@@ -215,7 +218,7 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		
 		long access = toJavacModifier(level) | (fieldDecl.mods.flags & Flags.STATIC);
 		
-		injectMethod(fieldNode.up(), createGetter(access, fieldNode, fieldNode.getTreeMaker(), source, lazy, onMethod));
+		injectMethod(fieldNode.up(), source, createGetter(access, fieldNode, fieldNode.getTreeMaker(), source, lazy, onMethod));
 	}
 	
 	public JCMethodDecl createGetter(long access, JavacNode field, JavacTreeMaker treeMaker, JavacNode source, boolean lazy, List<JCAnnotation> onMethod) {
@@ -358,7 +361,7 @@ public class HandleGetter extends JavacAnnotationHandler<Getter> {
 		}
 		if (copyOfBoxedFieldType == null) copyOfBoxedFieldType = copyType(maker, field, source);
 		
-		Name valueName = fieldNode.toName("value");
+		Name valueName = fieldNode.toName("$value");
 		Name actualValueName = fieldNode.toName("actualValue");
 		
 		/* java.lang.Object value = this.fieldName.get();*/ {
