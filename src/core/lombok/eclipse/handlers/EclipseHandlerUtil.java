@@ -22,8 +22,8 @@
 package lombok.eclipse.handlers;
 
 import static lombok.core.handlers.HandlerUtil.*;
-import static lombok.eclipse.Eclipse.*;
 import static lombok.eclipse.EcjAugments.*;
+import static lombok.eclipse.Eclipse.*;
 import static lombok.eclipse.handlers.EclipseHandlerUtil.EclipseReflectiveMembers.*;
 
 import java.lang.reflect.Array;
@@ -38,6 +38,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.jdt.core.compiler.CharOperation;
 import org.eclipse.jdt.internal.compiler.ast.ASTNode;
@@ -60,7 +62,6 @@ import org.eclipse.jdt.internal.compiler.ast.ConstructorDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.DoubleLiteral;
 import org.eclipse.jdt.internal.compiler.ast.EqualExpression;
 import org.eclipse.jdt.internal.compiler.ast.Expression;
-import org.eclipse.jdt.internal.compiler.ast.ExtendedStringLiteral;
 import org.eclipse.jdt.internal.compiler.ast.FalseLiteral;
 import org.eclipse.jdt.internal.compiler.ast.FieldDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.FieldReference;
@@ -86,7 +87,6 @@ import org.eclipse.jdt.internal.compiler.ast.SingleNameReference;
 import org.eclipse.jdt.internal.compiler.ast.SingleTypeReference;
 import org.eclipse.jdt.internal.compiler.ast.Statement;
 import org.eclipse.jdt.internal.compiler.ast.StringLiteral;
-import org.eclipse.jdt.internal.compiler.ast.StringLiteralConcatenation;
 import org.eclipse.jdt.internal.compiler.ast.ThisReference;
 import org.eclipse.jdt.internal.compiler.ast.ThrowStatement;
 import org.eclipse.jdt.internal.compiler.ast.TrueLiteral;
@@ -123,6 +123,7 @@ import lombok.core.configuration.TypeName;
 import lombok.core.debug.ProblemReporter;
 import lombok.core.handlers.HandlerUtil;
 import lombok.core.handlers.HandlerUtil.FieldAccess;
+import lombok.core.handlers.HandlerUtil.JavadocTag;
 import lombok.eclipse.EcjAugments;
 import lombok.eclipse.Eclipse;
 import lombok.eclipse.EclipseAST;
@@ -416,20 +417,6 @@ public class EclipseHandlerUtil {
 		if (in instanceof LongLiteral) return LongLiteral.buildLongLiteral(((Literal) in).source(), s, e);
 		
 		if (in instanceof StringLiteral) return new StringLiteral(((Literal) in).source(), s, e, reflectInt(STRING_LITERAL__LINE_NUMBER, in) + 1);
-		if (in instanceof ExtendedStringLiteral) {
-			StringLiteral str = new StringLiteral(((Literal) in).source(), s, e, reflectInt(STRING_LITERAL__LINE_NUMBER, in) + 1);
-			StringLiteral empty = new StringLiteral(new char[0], s, e, reflectInt(STRING_LITERAL__LINE_NUMBER, in) + 1);
-			return new ExtendedStringLiteral(str, empty);
-		}
-		if (in instanceof StringLiteralConcatenation) {
-			Expression[] literals = ((StringLiteralConcatenation) in).literals;
-			// 0 and 1 len shouldn't happen.
-			if (literals.length == 0) return new StringLiteral(new char[0], s, e, 0);
-			if (literals.length == 1) return copyAnnotationMemberValue0(literals[0]);
-			StringLiteralConcatenation c = new StringLiteralConcatenation((StringLiteral) literals[0], (StringLiteral) literals[1]);
-			for (int i = 2; i < literals.length; i++) c = c.extendsWith((StringLiteral) literals[i]);
-			return c;
-		}
 		
 		// enums and field accesses (as long as those are references to compile time constant literals that's also acceptable)
 		
@@ -2113,7 +2100,7 @@ public class EclipseHandlerUtil {
 		if (Boolean.TRUE.equals(node.getAst().readConfiguration(ConfigurationKeys.ADD_JAKARTA_GENERATED_ANNOTATIONS))) {
 			result = addAnnotation(source, result, JAKARTA_ANNOTATION_GENERATED, new StringLiteral(LOMBOK, 0, 0, 0));
 		}
-		if (Boolean.TRUE.equals(node.getAst().readConfiguration(ConfigurationKeys.ADD_LOMBOK_GENERATED_ANNOTATIONS))) {
+		if (!Boolean.FALSE.equals(node.getAst().readConfiguration(ConfigurationKeys.ADD_LOMBOK_GENERATED_ANNOTATIONS))) {
 			result = addAnnotation(source, result, LOMBOK_GENERATED);
 		}
 		return result;
@@ -2812,32 +2799,51 @@ public class EclipseHandlerUtil {
 		return annotations;
 	}
 	
+	private static final Pattern JAVADOC_PATTERN = Pattern.compile("^\\s*\\/\\*\\*((?:\\S|\\s)*?)\\*\\/", Pattern.MULTILINE);
+	private static final Pattern LEADING_ASTERISKS_PATTERN = Pattern.compile("(?m)^\\s*\\* ?");
+
 	public static String getDocComment(EclipseNode eclipseNode) {
 		if (eclipseNode.getAst().getSource() == null) return null;
+		
+		int start = -1;
+		int end = -1;
 		
 		final ASTNode node = eclipseNode.get();
 		if (node instanceof FieldDeclaration) {
 			FieldDeclaration fieldDeclaration = (FieldDeclaration) node;
-			char[] rawContent = CharOperation.subarray(eclipseNode.getAst().getSource(), fieldDeclaration.declarationSourceStart, fieldDeclaration.declarationSourceEnd);
+			start = fieldDeclaration.declarationSourceStart;
+			end = fieldDeclaration.declarationSourceEnd;
+		} else if (node instanceof AbstractMethodDeclaration) {
+			AbstractMethodDeclaration abstractMethodDeclaration = (AbstractMethodDeclaration) node;
+			start = abstractMethodDeclaration.declarationSourceStart;
+			end = abstractMethodDeclaration.declarationSourceEnd;
+		}
+		if (start != -1 && end != -1) {
+			char[] rawContent = CharOperation.subarray(eclipseNode.getAst().getSource(), start, end);
 			String rawContentString = new String(rawContent);
-			int startIndex = rawContentString.indexOf("/**");
-			int endIndex = rawContentString.indexOf("*/");
-			if (startIndex != -1 && endIndex != -1) {
+			Matcher javadocMatcher = JAVADOC_PATTERN.matcher(rawContentString);
+			if (javadocMatcher.find()) {
+				String javadoc = javadocMatcher.group(1);
 				/* Remove all leading asterisks */
-				return rawContentString.substring(startIndex + 3, endIndex).replaceAll("(?m)^\\s*\\* ?", "").trim();
+				return LEADING_ASTERISKS_PATTERN.matcher(javadoc).replaceAll("").trim();
 			}
 		}
 		return null;
 	}
 	
+	public static void setDocComment(EclipseNode typeNode, EclipseNode eclipseNode, String doc) {
+		setDocComment((CompilationUnitDeclaration) eclipseNode.top().get(), (TypeDeclaration) typeNode.get(), eclipseNode.get(), doc);
+	}
+	
 	public static void setDocComment(CompilationUnitDeclaration cud, EclipseNode eclipseNode, String doc) {
 		setDocComment(cud, (TypeDeclaration) upToTypeNode(eclipseNode).get(), eclipseNode.get(), doc);
 	}
-	 
+	
 	public static void setDocComment(CompilationUnitDeclaration cud, TypeDeclaration type, ASTNode node, String doc) {
 		if (doc == null) return;
 		
 		ICompilationUnit compilationUnit = cud.compilationResult.compilationUnit;
+		if (compilationUnit == null) return;
 		if (compilationUnit.getClass().equals(COMPILATION_UNIT)) {
 			try {
 				compilationUnit = (ICompilationUnit) Permit.invoke(COMPILATION_UNIT_ORIGINAL_FROM_CLONE, compilationUnit);

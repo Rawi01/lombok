@@ -277,11 +277,16 @@ final class PatchFixesHider {
 	public static final class Delegate {
 		private static final Method HANDLE_DELEGATE_FOR_TYPE;
 		private static final Method ADD_GENERATED_DELEGATE_METHODS;
+		public static final Method IS_DELEGATE_SOURCE_METHOD;
+		public static final Method RETURN_ELEMENT_INFO;
 		
 		static {
-			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchDelegatePortal");
-			HANDLE_DELEGATE_FOR_TYPE = Util.findMethod(shadowed, "handleDelegateForType", Object.class);
-			ADD_GENERATED_DELEGATE_METHODS = Util.findMethod(shadowed, "addGeneratedDelegateMethods", Object.class, Object.class);
+			Class<?> shadowedPortal = Util.shadowLoadClass("lombok.eclipse.agent.PatchDelegatePortal");
+			HANDLE_DELEGATE_FOR_TYPE = Util.findMethod(shadowedPortal, "handleDelegateForType", Object.class);
+			ADD_GENERATED_DELEGATE_METHODS = Util.findMethod(shadowedPortal, "addGeneratedDelegateMethods", Object.class, Object.class);
+			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchDelegate");
+			IS_DELEGATE_SOURCE_METHOD = Util.findMethod(shadowed, "isDelegateSourceMethod", Object.class);
+			RETURN_ELEMENT_INFO = Util.findMethod(shadowed, "returnElementInfo", Object.class);
 		}
 		
 		public static boolean handleDelegateForType(Object classScope) {
@@ -290,6 +295,14 @@ final class PatchFixesHider {
 		
 		public static Object[] addGeneratedDelegateMethods(Object returnValue, Object javaElement) {
 			return (Object[]) Util.invokeMethod(ADD_GENERATED_DELEGATE_METHODS, returnValue, javaElement);
+		}
+		
+		public static boolean isDelegateSourceMethod(Object sourceMethod) {
+			return (Boolean) Util.invokeMethod(IS_DELEGATE_SOURCE_METHOD, sourceMethod);
+		}
+		
+		public static Object returnElementInfo(Object delegateSourceMethod) {
+			return Util.invokeMethod(RETURN_ELEMENT_INFO, delegateSourceMethod);
 		}
 	}
 	
@@ -432,25 +445,18 @@ final class PatchFixesHider {
 	/** Contains patch code to support Javadoc for generated methods */
 	public static final class Javadoc {
 		private static final Method GET_HTML;
-		private static final Method PRINT_METHOD_OLD;
-		private static final Method PRINT_METHOD_NEW;
 		
 		static {
 			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchJavadoc");
-			GET_HTML = Util.findMethod(shadowed, "getHTMLContentFromSource", String.class, Object.class);
-			PRINT_METHOD_NEW = Util.findMethod(shadowed, "printMethod", AbstractMethodDeclaration.class, Integer.class, StringBuilder.class, TypeDeclaration.class);
-			PRINT_METHOD_OLD = Util.findMethod(shadowed, "printMethod", AbstractMethodDeclaration.class, Integer.class, StringBuffer.class, TypeDeclaration.class);
+			GET_HTML = Util.findMethod(shadowed, "getHTMLContentFromSource", Object.class, String.class, Object.class);
 		}
 		
 		public static String getHTMLContentFromSource(String original, IJavaElement member) {
-			return (String) Util.invokeMethod(GET_HTML, original, member);
+			return (String) Util.invokeMethod(GET_HTML, null, original, member);
 		}
 		
-		public static StringBuilder printMethod(AbstractMethodDeclaration methodDeclaration, int tab, StringBuilder output, TypeDeclaration type) {
-				return (StringBuilder) Util.invokeMethod(PRINT_METHOD_NEW, methodDeclaration, tab, output, type);
-		}
-		public static StringBuffer printMethod(AbstractMethodDeclaration methodDeclaration, int tab, StringBuffer output, TypeDeclaration type) {
-			return (StringBuffer) Util.invokeMethod(PRINT_METHOD_OLD, methodDeclaration, tab, output, type);
+		public static String getHTMLContentFromSource(String original, Object instance, IJavaElement member) {
+			return (String) Util.invokeMethod(GET_HTML, instance, original, member);
 		}
 	}
 	
@@ -884,6 +890,14 @@ final class PatchFixesHider {
 			}
 			
 			return replace;
+		}
+		
+		public static boolean isEmpty(char[] array) {
+			return array.length == 0;
+		}
+		
+		public static Expression returnNullExpression(Object arg0) {
+			return null;
 		}
 		
 		public static String getRealNodeSource(String original, org.eclipse.jdt.internal.compiler.ast.ASTNode node) {
