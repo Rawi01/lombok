@@ -1,0 +1,27 @@
+#!/bin/bash
+set -euo pipefail
+echo 'This will build a project with mapstruct. If the compilation works without error or warning, lombok is working as designed.'
+
+wget --no-clobber https://repo1.maven.org/maven2/org/mapstruct/mapstruct/1.6.2/mapstruct-1.6.2.jar
+wget --no-clobber https://repo1.maven.org/maven2/org/mapstruct/mapstruct-processor/1.6.2/mapstruct-processor-1.6.2.jar
+
+LOMBOK=../../../dist/lombok.jar
+BINDING=../../../dist/lombok-mapstruct-binding-0.3.0.jar
+
+# wget --no-clobber https://repo1.maven.org/maven2/org/projectlombok/lombok/1.18.34/lombok-1.18.34.jar
+# wget --no-clobber https://repo1.maven.org/maven2/org/projectlombok/lombok-mapstruct-binding/0.2.0/lombok-mapstruct-binding-0.2.0.jar
+# LOMBOK=lombok-1.18.34.jar
+# BINDING=lombok-mapstruct-binding-0.2.0.jar
+
+mkdir -p out
+
+javac \
+	-proc:full \
+	--class-path mapstruct-1.6.2.jar:mapstruct-processor-1.6.2.jar:$LOMBOK:$BINDING \
+	-d out \
+	src/*
+
+if ! grep -q 'to.setTest( from.getTest() );' 'out/MapperImpl.java'; then
+	echo 'Mapstruct does not detect lombok getters!' >&2
+	exit 1
+fi
