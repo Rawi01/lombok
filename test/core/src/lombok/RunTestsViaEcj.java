@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2024 The Project Lombok Authors.
+ * Copyright (C) 2010-2025 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -79,7 +79,6 @@ public class RunTestsViaEcj extends AbstractRunTests {
 		options.targetJDK = ecjCompilerVersionConstant;
 		options.docCommentSupport = false;
 		options.parseLiteralExpressionsAsConstants = true;
-		options.inlineJsrBytecode = true;
 		options.reportUnusedDeclaredThrownExceptionExemptExceptionAndThrowable = false;
 		options.reportUnusedDeclaredThrownExceptionIncludeDocCommentReference = false;
 		options.reportUnusedDeclaredThrownExceptionWhenOverriding = false;
@@ -96,6 +95,7 @@ public class RunTestsViaEcj extends AbstractRunTests {
 		warnings.put(CompilerOptions.OPTION_ReportNonStaticAccessToStatic, "warning");
 		warnings.put("org.eclipse.jdt.core.compiler.problem.reportPreviewFeatures", "ignore");
 		warnings.put(CompilerOptions.OPTION_Source, (ecjCompilerVersion < 9 ? "1." : "") + ecjCompilerVersion);
+		warnings.put(CompilerOptions.OPTION_TargetPlatform, (ecjCompilerVersion < 9 ? "1." : "") + ecjCompilerVersion);
 		warnings.put("org.eclipse.jdt.core.compiler.codegen.useStringConcatFactory", "disabled");
 		options.set(warnings);
 		return options;
@@ -242,7 +242,7 @@ public class RunTestsViaEcj extends AbstractRunTests {
 					return source;
 				}
 			};
-			return AST.convertCompilationUnit(4, cud, options, false, ccu, 0, null);
+			return AST.convertCompilationUnit(8, cud, options, false, ccu, 0, null);
 		}
 	}
 	

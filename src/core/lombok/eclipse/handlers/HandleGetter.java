@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2022 The Project Lombok Authors.
+ * Copyright (C) 2009-2025 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -83,7 +83,7 @@ import org.eclipse.jdt.internal.compiler.lookup.TypeConstants;
 public class HandleGetter extends EclipseAnnotationHandler<Getter> {
 	private static final Annotation[] EMPTY_ANNOTATIONS_ARRAY = new Annotation[0];
 	private static final String GETTER_NODE_NOT_SUPPORTED_ERR = "@Getter is only supported on a class, an enum, or a field.";
-
+	
 	public boolean generateGetterForType(EclipseNode typeNode, EclipseNode pos, AccessLevel level, boolean checkForTypeLevelGetter, List<Annotation> onMethod) {
 		if (checkForTypeLevelGetter) {
 			if (hasAnnotation(Getter.class, typeNode)) {
@@ -147,6 +147,9 @@ public class HandleGetter extends EclipseAnnotationHandler<Getter> {
 		if (node == null) return;
 		
 		List<Annotation> onMethod = unboxAndRemoveAnnotationParameter(ast, "onMethod", "@Getter(onMethod", annotationNode);
+		if (!onMethod.isEmpty()) {
+			handleFlagUsage(annotationNode, ConfigurationKeys.ON_X_FLAG_USAGE, "@Getter(onMethod=...)");
+		}
 		
 		switch (node.getKind()) {
 		case FIELD:
@@ -276,9 +279,15 @@ public class HandleGetter extends EclipseAnnotationHandler<Getter> {
 				if (getCheckerFrameworkVersion(fieldNode).generateSideEffectFree()) checkerFramework = new Annotation[] { generateNamedAnnotation(source, CheckerFrameworkVersion.NAME__SIDE_EFFECT_FREE) };
 			}
 			
+			// Copying Jackson annotations is required for fluent accessors (otherwise Jackson would not find the accessor).
+			boolean fluent = accessors.isExplicit("fluent");
+			Boolean fluentConfig = fieldNode.getAst().readConfiguration(ConfigurationKeys.ACCESSORS_FLUENT);
+			if (fluentConfig != null && fluentConfig) fluent = fluentConfig;
+			
 			method.annotations = copyAnnotations(source,
 				onMethod.toArray(new Annotation[0]),
 				findCopyableAnnotations(fieldNode),
+				findCopyableToGetterAnnotations(fieldNode, fluent),
 				findDelegatesAndMarkAsHandled(fieldNode),
 				checkerFramework,
 				deprecated);
@@ -323,7 +332,7 @@ public class HandleGetter extends EclipseAnnotationHandler<Getter> {
 		TYPE_MAP = Collections.unmodifiableMap(m);
 	}
 	
-	private static char[] valueName = "value".toCharArray();
+	private static char[] valueName = "$value".toCharArray();
 	private static char[] actualValueName = "actualValue".toCharArray();
 	
 	private static final int PARENTHESIZED = (1 << ASTNode.ParenthesizedSHIFT) & ASTNode.ParenthesizedMASK;

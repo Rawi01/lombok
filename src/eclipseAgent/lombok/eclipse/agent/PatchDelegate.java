@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2021 The Project Lombok Authors.
+ * Copyright (C) 2010-2025 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -21,10 +21,11 @@
  */
 package lombok.eclipse.agent;
 
-import static lombok.eclipse.Eclipse.*;
 import static lombok.eclipse.EcjAugments.*;
+import static lombok.eclipse.Eclipse.*;
 import static lombok.eclipse.handlers.EclipseHandlerUtil.*;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -47,13 +48,13 @@ import org.eclipse.jdt.core.compiler.CharOperation;
 import org.eclipse.jdt.internal.compiler.CompilationResult;
 import org.eclipse.jdt.internal.compiler.ast.ASTNode;
 import org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration;
+import org.eclipse.jdt.internal.compiler.ast.AbstractVariableDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.Annotation;
 import org.eclipse.jdt.internal.compiler.ast.Argument;
 import org.eclipse.jdt.internal.compiler.ast.ArrayInitializer;
 import org.eclipse.jdt.internal.compiler.ast.ClassLiteralAccess;
 import org.eclipse.jdt.internal.compiler.ast.CompilationUnitDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.Expression;
-import org.eclipse.jdt.internal.compiler.ast.FieldDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.FieldReference;
 import org.eclipse.jdt.internal.compiler.ast.MemberValuePair;
 import org.eclipse.jdt.internal.compiler.ast.MessageSend;
@@ -128,7 +129,8 @@ public class PatchDelegate {
 	}
 	
 	private static boolean hasDelegateMarkedFieldsOrMethods(TypeDeclaration decl) {
-		if (decl.fields != null) for (FieldDeclaration field : decl.fields) {
+		AbstractVariableDeclaration[] fields = getFieldsOrRecordComponents(decl);
+		if (fields != null) for (AbstractVariableDeclaration field : fields) {
 			if (field.annotations == null) continue;
 			for (Annotation ann : field.annotations) {
 				if (isDelegate(ann, decl)) return true;
@@ -223,11 +225,19 @@ public class PatchDelegate {
 		Annotation_applied.set(annotation, true);
 	}
 	
+	private static AbstractVariableDeclaration[] getFieldsOrRecordComponents(TypeDeclaration decl) {
+		if (isRecord(decl)) return getRecordComponents(decl);
+		return decl.fields;
+	}
+	
 	private static void fillMethodBindingsForFields(CompilationUnitDeclaration cud, ClassScope scope, List<BindingTuple> methodsToDelegate) {
 		TypeDeclaration decl = scope.referenceContext;
 		if (decl == null) return;
 		
-		if (decl.fields != null) for (FieldDeclaration field : decl.fields) {
+		AbstractVariableDeclaration[] fields = getFieldsOrRecordComponents(decl);
+		if (fields == null) return;
+		
+		for (AbstractVariableDeclaration field : fields) {
 			if (field.annotations == null) continue;
 			for (Annotation ann : field.annotations) {
 				if (!isDelegate(ann, decl)) continue;
@@ -724,6 +734,15 @@ public class PatchDelegate {
 		if (!eclipseAvailable) return returnValue;
 		
 		return EclipseOnlyMethods.addGeneratedDelegateMethodsToChildren(returnValue, javaElement);
+	}
+	
+	public static Object returnElementInfo(Object delegateSourceMethod) {
+		Field field = Permit.permissiveGetField(delegateSourceMethod.getClass(), "sourceMethodInfo");
+		return Permit.permissiveReadField(Object.class, field, delegateSourceMethod);
+	}
+	
+	public static boolean isDelegateSourceMethod(Object sourceMethod) {
+		return sourceMethod.getClass().getName().equals("lombok.eclipse.agent.PatchDelegate$EclipseOnlyMethods$DelegateSourceMethod");
 	}
 	
 	public static class EclipseOnlyMethods {

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2024 The Project Lombok Authors.
+ * Copyright (C) 2009-2025 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -22,8 +22,8 @@
 package lombok.eclipse.handlers;
 
 import static lombok.core.handlers.HandlerUtil.*;
-import static lombok.eclipse.Eclipse.*;
 import static lombok.eclipse.EcjAugments.*;
+import static lombok.eclipse.Eclipse.*;
 import static lombok.eclipse.handlers.EclipseHandlerUtil.EclipseReflectiveMembers.*;
 
 import java.lang.reflect.Array;
@@ -38,6 +38,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.eclipse.jdt.core.compiler.CharOperation;
 import org.eclipse.jdt.internal.compiler.ast.ASTNode;
@@ -60,7 +62,6 @@ import org.eclipse.jdt.internal.compiler.ast.ConstructorDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.DoubleLiteral;
 import org.eclipse.jdt.internal.compiler.ast.EqualExpression;
 import org.eclipse.jdt.internal.compiler.ast.Expression;
-import org.eclipse.jdt.internal.compiler.ast.ExtendedStringLiteral;
 import org.eclipse.jdt.internal.compiler.ast.FalseLiteral;
 import org.eclipse.jdt.internal.compiler.ast.FieldDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.FieldReference;
@@ -86,7 +87,6 @@ import org.eclipse.jdt.internal.compiler.ast.SingleNameReference;
 import org.eclipse.jdt.internal.compiler.ast.SingleTypeReference;
 import org.eclipse.jdt.internal.compiler.ast.Statement;
 import org.eclipse.jdt.internal.compiler.ast.StringLiteral;
-import org.eclipse.jdt.internal.compiler.ast.StringLiteralConcatenation;
 import org.eclipse.jdt.internal.compiler.ast.ThisReference;
 import org.eclipse.jdt.internal.compiler.ast.ThrowStatement;
 import org.eclipse.jdt.internal.compiler.ast.TrueLiteral;
@@ -123,6 +123,7 @@ import lombok.core.configuration.TypeName;
 import lombok.core.debug.ProblemReporter;
 import lombok.core.handlers.HandlerUtil;
 import lombok.core.handlers.HandlerUtil.FieldAccess;
+import lombok.core.handlers.HandlerUtil.JavadocTag;
 import lombok.eclipse.EcjAugments;
 import lombok.eclipse.Eclipse;
 import lombok.eclipse.EclipseAST;
@@ -416,20 +417,6 @@ public class EclipseHandlerUtil {
 		if (in instanceof LongLiteral) return LongLiteral.buildLongLiteral(((Literal) in).source(), s, e);
 		
 		if (in instanceof StringLiteral) return new StringLiteral(((Literal) in).source(), s, e, reflectInt(STRING_LITERAL__LINE_NUMBER, in) + 1);
-		if (in instanceof ExtendedStringLiteral) {
-			StringLiteral str = new StringLiteral(((Literal) in).source(), s, e, reflectInt(STRING_LITERAL__LINE_NUMBER, in) + 1);
-			StringLiteral empty = new StringLiteral(new char[0], s, e, reflectInt(STRING_LITERAL__LINE_NUMBER, in) + 1);
-			return new ExtendedStringLiteral(str, empty);
-		}
-		if (in instanceof StringLiteralConcatenation) {
-			Expression[] literals = ((StringLiteralConcatenation) in).literals;
-			// 0 and 1 len shouldn't happen.
-			if (literals.length == 0) return new StringLiteral(new char[0], s, e, 0);
-			if (literals.length == 1) return copyAnnotationMemberValue0(literals[0]);
-			StringLiteralConcatenation c = new StringLiteralConcatenation((StringLiteral) literals[0], (StringLiteral) literals[1]);
-			for (int i = 2; i < literals.length; i++) c = c.extendsWith((StringLiteral) literals[i]);
-			return c;
-		}
 		
 		// enums and field accesses (as long as those are references to compile time constant literals that's also acceptable)
 		
@@ -833,17 +820,36 @@ public class EclipseHandlerUtil {
 	}
 	
 	/**
-	 * Searches the given field node for annotations that are specifically intentioned to be copied to the setter.
+	 * Searches the given field node for annotations that are specifically intended to be copied to the getter.
+	 * 
+	 * @param forceCopyJacksonAnnotations If {@code true}, always copy the annotations regardless of regardless of lombok configuration key {@code lombok.copyJacksonAnnotationsToAccessors}.
 	 */
-	public static Annotation[] findCopyableToSetterAnnotations(EclipseNode node) {
-		return findAnnotationsInList(node, COPY_TO_SETTER_ANNOTATIONS);
+	public static Annotation[] findCopyableToGetterAnnotations(EclipseNode node, boolean forceCopyJacksonAnnotations) {
+		if (!forceCopyJacksonAnnotations) {
+			Boolean copyAnnotations = node.getAst().readConfiguration(ConfigurationKeys.COPY_JACKSON_ANNOTATIONS_TO_ACCESSORS);
+			if (copyAnnotations == null || !copyAnnotations) return EMPTY_ANNOTATIONS_ARRAY;
+		}
+		return findAnnotationsInList(node, JACKSON_COPY_TO_GETTER_ANNOTATIONS);
 	}
-
+	
 	/**
-	 * Searches the given field node for annotations that are specifically intentioned to be copied to the builder's singular method.
+	 * Searches the given field node for annotations that are specifically intended to be copied to the setter.
+	 * 
+	 * @param forceCopyJacksonAnnotations If {@code true}, always copy the annotations regardless of regardless of lombok configuration key {@code lombok.copyJacksonAnnotationsToAccessors}.
+	 */
+	public static Annotation[] findCopyableToSetterAnnotations(EclipseNode node, boolean forceCopyJacksonAnnotations) {
+		if (!forceCopyJacksonAnnotations) {
+			Boolean copyAnnotations = node.getAst().readConfiguration(ConfigurationKeys.COPY_JACKSON_ANNOTATIONS_TO_ACCESSORS);
+			if (copyAnnotations == null || !copyAnnotations) return EMPTY_ANNOTATIONS_ARRAY;
+		}
+		return findAnnotationsInList(node, JACKSON_COPY_TO_SETTER_ANNOTATIONS);
+	}
+	
+	/**
+	 * Searches the given field node for annotations that are specifically intended to be copied to the builder's singular method.
 	 */
 	public static Annotation[] findCopyableToBuilderSingularSetterAnnotations(EclipseNode node) {
-		return findAnnotationsInList(node, COPY_TO_BUILDER_SINGULAR_SETTER_ANNOTATIONS);
+		return findAnnotationsInList(node, JACKSON_COPY_TO_BUILDER_SINGULAR_SETTER_ANNOTATIONS);
 	}
 	
 	/**
@@ -2113,7 +2119,7 @@ public class EclipseHandlerUtil {
 		if (Boolean.TRUE.equals(node.getAst().readConfiguration(ConfigurationKeys.ADD_JAKARTA_GENERATED_ANNOTATIONS))) {
 			result = addAnnotation(source, result, JAKARTA_ANNOTATION_GENERATED, new StringLiteral(LOMBOK, 0, 0, 0));
 		}
-		if (Boolean.TRUE.equals(node.getAst().readConfiguration(ConfigurationKeys.ADD_LOMBOK_GENERATED_ANNOTATIONS))) {
+		if (!Boolean.FALSE.equals(node.getAst().readConfiguration(ConfigurationKeys.ADD_LOMBOK_GENERATED_ANNOTATIONS))) {
 			result = addAnnotation(source, result, LOMBOK_GENERATED);
 		}
 		return result;
@@ -2156,7 +2162,7 @@ public class EclipseHandlerUtil {
 			for (int i = 0; i < args.length; i++) {
 				args[i].sourceStart = pS;
 				args[i].sourceEnd = pE;
-				na.memberValuePairs[i] = (MemberValuePair) args[i];			
+				na.memberValuePairs[i] = (MemberValuePair) args[i];
 			}
 			setGeneratedBy(na.memberValuePairs[0], source);
 			setGeneratedBy(na.memberValuePairs[0].value, source);
@@ -2749,10 +2755,8 @@ public class EclipseHandlerUtil {
 	 * Returns {@code true} if the provided node is a record declaration (so, not an annotation definition, interface, enum, or plain class).
 	 */
 	public static boolean isRecord(EclipseNode typeNode) {
-		TypeDeclaration typeDecl = null;
-		if (typeNode.get() instanceof TypeDeclaration) typeDecl = (TypeDeclaration) typeNode.get();
-		int modifiers = typeDecl == null ? 0 : typeDecl.modifiers;
-		return (modifiers & AccRecord) != 0;
+		ASTNode node = typeNode.get();
+		return node instanceof TypeDeclaration && isRecord((TypeDeclaration) node);
 	}
 	
 	/**
@@ -2786,6 +2790,14 @@ public class EclipseHandlerUtil {
 		return typeNode.isStatic() || typeNode.up() == null || typeNode.up().getKind() == Kind.COMPILATION_UNIT || isRecord(typeNode);
 	}
 	
+	/**
+	 * Returns {@code true} if the provided type declaration is a record declaration (so, not an annotation definition, interface, enum, or plain class).
+	 */
+	public static boolean isRecord(TypeDeclaration typeDecl) {
+		int modifiers = typeDecl == null ? 0 : typeDecl.modifiers;
+		return (modifiers & AccRecord) != 0;
+	}
+	
 	public static AbstractVariableDeclaration[] getRecordComponents(TypeDeclaration typeDeclaration) {
 		if (typeDeclaration == null || (typeDeclaration.modifiers & AccRecord) == 0) return null;
 		try {
@@ -2812,32 +2824,51 @@ public class EclipseHandlerUtil {
 		return annotations;
 	}
 	
+	private static final Pattern JAVADOC_PATTERN = Pattern.compile("^\\s*\\/\\*\\*(.*?)\\*\\/", Pattern.MULTILINE | Pattern.DOTALL);
+	private static final Pattern LEADING_ASTERISKS_PATTERN = Pattern.compile("^\\s*\\* ?", Pattern.MULTILINE);
+
 	public static String getDocComment(EclipseNode eclipseNode) {
 		if (eclipseNode.getAst().getSource() == null) return null;
+		
+		int start = -1;
+		int end = -1;
 		
 		final ASTNode node = eclipseNode.get();
 		if (node instanceof FieldDeclaration) {
 			FieldDeclaration fieldDeclaration = (FieldDeclaration) node;
-			char[] rawContent = CharOperation.subarray(eclipseNode.getAst().getSource(), fieldDeclaration.declarationSourceStart, fieldDeclaration.declarationSourceEnd);
+			start = fieldDeclaration.declarationSourceStart;
+			end = fieldDeclaration.declarationSourceEnd;
+		} else if (node instanceof AbstractMethodDeclaration) {
+			AbstractMethodDeclaration abstractMethodDeclaration = (AbstractMethodDeclaration) node;
+			start = abstractMethodDeclaration.declarationSourceStart;
+			end = abstractMethodDeclaration.declarationSourceEnd;
+		}
+		if (start != -1 && end != -1) {
+			char[] rawContent = CharOperation.subarray(eclipseNode.getAst().getSource(), start, end);
 			String rawContentString = new String(rawContent);
-			int startIndex = rawContentString.indexOf("/**");
-			int endIndex = rawContentString.indexOf("*/");
-			if (startIndex != -1 && endIndex != -1) {
+			Matcher javadocMatcher = JAVADOC_PATTERN.matcher(rawContentString);
+			if (javadocMatcher.find()) {
+				String javadoc = javadocMatcher.group(1);
 				/* Remove all leading asterisks */
-				return rawContentString.substring(startIndex + 3, endIndex).replaceAll("(?m)^\\s*\\* ?", "").trim();
+				return LEADING_ASTERISKS_PATTERN.matcher(javadoc).replaceAll("").trim();
 			}
 		}
 		return null;
 	}
 	
+	public static void setDocComment(EclipseNode typeNode, EclipseNode eclipseNode, String doc) {
+		setDocComment((CompilationUnitDeclaration) eclipseNode.top().get(), (TypeDeclaration) typeNode.get(), eclipseNode.get(), doc);
+	}
+	
 	public static void setDocComment(CompilationUnitDeclaration cud, EclipseNode eclipseNode, String doc) {
 		setDocComment(cud, (TypeDeclaration) upToTypeNode(eclipseNode).get(), eclipseNode.get(), doc);
 	}
-	 
+	
 	public static void setDocComment(CompilationUnitDeclaration cud, TypeDeclaration type, ASTNode node, String doc) {
 		if (doc == null) return;
 		
 		ICompilationUnit compilationUnit = cud.compilationResult.compilationUnit;
+		if (compilationUnit == null) return;
 		if (compilationUnit.getClass().equals(COMPILATION_UNIT)) {
 			try {
 				compilationUnit = (ICompilationUnit) Permit.invoke(COMPILATION_UNIT_ORIGINAL_FROM_CLONE, compilationUnit);

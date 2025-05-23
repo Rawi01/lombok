@@ -5,12 +5,13 @@ class DelegateOnGetter {
 		int getInt();
 	}
 	@java.lang.SuppressWarnings({"all", "unchecked"})
+	@lombok.Generated
 	public Bar getBar() {
-		java.lang.Object value = this.bar.get();
-		if (value == null) {
+		java.lang.Object $value = this.bar.get();
+		if ($value == null) {
 			synchronized (this.bar) {
-				value = this.bar.get();
-				if (value == null) {
+				$value = this.bar.get();
+				if ($value == null) {
 					final Bar actualValue = new Bar() {
 						public void setList(java.util.ArrayList<String> list) {
 						}
@@ -18,18 +19,20 @@ class DelegateOnGetter {
 							return 42;
 						}
 					};
-					value = actualValue == null ? this.bar : actualValue;
-					this.bar.set(value);
+					$value = actualValue == null ? this.bar : actualValue;
+					this.bar.set($value);
 				}
 			}
 		}
-		return (Bar) (value == this.bar ? null : value);
+		return (Bar) ($value == this.bar ? null : $value);
 	}
 	@java.lang.SuppressWarnings("all")
+	@lombok.Generated
 	public void setList(final java.util.ArrayList<java.lang.String> list) {
 		this.getBar().setList(list);
 	}
 	@java.lang.SuppressWarnings("all")
+	@lombok.Generated
 	public int getInt() {
 		return this.getBar().getInt();
 	}

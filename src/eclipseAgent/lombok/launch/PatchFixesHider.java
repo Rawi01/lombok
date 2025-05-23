@@ -41,12 +41,16 @@ import org.eclipse.jdt.core.IAnnotatable;
 import org.eclipse.jdt.core.IAnnotation;
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IMethod;
+import org.eclipse.jdt.core.ISourceRange;
 import org.eclipse.jdt.core.IType;
 import org.eclipse.jdt.core.JavaModelException;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
+import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Name;
+import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.ReturnStatement;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
@@ -277,11 +281,16 @@ final class PatchFixesHider {
 	public static final class Delegate {
 		private static final Method HANDLE_DELEGATE_FOR_TYPE;
 		private static final Method ADD_GENERATED_DELEGATE_METHODS;
+		public static final Method IS_DELEGATE_SOURCE_METHOD;
+		public static final Method RETURN_ELEMENT_INFO;
 		
 		static {
-			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchDelegatePortal");
-			HANDLE_DELEGATE_FOR_TYPE = Util.findMethod(shadowed, "handleDelegateForType", Object.class);
-			ADD_GENERATED_DELEGATE_METHODS = Util.findMethod(shadowed, "addGeneratedDelegateMethods", Object.class, Object.class);
+			Class<?> shadowedPortal = Util.shadowLoadClass("lombok.eclipse.agent.PatchDelegatePortal");
+			HANDLE_DELEGATE_FOR_TYPE = Util.findMethod(shadowedPortal, "handleDelegateForType", Object.class);
+			ADD_GENERATED_DELEGATE_METHODS = Util.findMethod(shadowedPortal, "addGeneratedDelegateMethods", Object.class, Object.class);
+			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchDelegate");
+			IS_DELEGATE_SOURCE_METHOD = Util.findMethod(shadowed, "isDelegateSourceMethod", Object.class);
+			RETURN_ELEMENT_INFO = Util.findMethod(shadowed, "returnElementInfo", Object.class);
 		}
 		
 		public static boolean handleDelegateForType(Object classScope) {
@@ -290,6 +299,14 @@ final class PatchFixesHider {
 		
 		public static Object[] addGeneratedDelegateMethods(Object returnValue, Object javaElement) {
 			return (Object[]) Util.invokeMethod(ADD_GENERATED_DELEGATE_METHODS, returnValue, javaElement);
+		}
+		
+		public static boolean isDelegateSourceMethod(Object sourceMethod) {
+			return (Boolean) Util.invokeMethod(IS_DELEGATE_SOURCE_METHOD, sourceMethod);
+		}
+		
+		public static Object returnElementInfo(Object delegateSourceMethod) {
+			return Util.invokeMethod(RETURN_ELEMENT_INFO, delegateSourceMethod);
 		}
 	}
 	
@@ -432,25 +449,18 @@ final class PatchFixesHider {
 	/** Contains patch code to support Javadoc for generated methods */
 	public static final class Javadoc {
 		private static final Method GET_HTML;
-		private static final Method PRINT_METHOD_OLD;
-		private static final Method PRINT_METHOD_NEW;
 		
 		static {
 			Class<?> shadowed = Util.shadowLoadClass("lombok.eclipse.agent.PatchJavadoc");
-			GET_HTML = Util.findMethod(shadowed, "getHTMLContentFromSource", String.class, Object.class);
-			PRINT_METHOD_NEW = Util.findMethod(shadowed, "printMethod", AbstractMethodDeclaration.class, Integer.class, StringBuilder.class, TypeDeclaration.class);
-			PRINT_METHOD_OLD = Util.findMethod(shadowed, "printMethod", AbstractMethodDeclaration.class, Integer.class, StringBuffer.class, TypeDeclaration.class);
+			GET_HTML = Util.findMethod(shadowed, "getHTMLContentFromSource", Object.class, String.class, Object.class);
 		}
 		
 		public static String getHTMLContentFromSource(String original, IJavaElement member) {
-			return (String) Util.invokeMethod(GET_HTML, original, member);
+			return (String) Util.invokeMethod(GET_HTML, null, original, member);
 		}
 		
-		public static StringBuilder printMethod(AbstractMethodDeclaration methodDeclaration, int tab, StringBuilder output, TypeDeclaration type) {
-				return (StringBuilder) Util.invokeMethod(PRINT_METHOD_NEW, methodDeclaration, tab, output, type);
-		}
-		public static StringBuffer printMethod(AbstractMethodDeclaration methodDeclaration, int tab, StringBuffer output, TypeDeclaration type) {
-			return (StringBuffer) Util.invokeMethod(PRINT_METHOD_OLD, methodDeclaration, tab, output, type);
+		public static String getHTMLContentFromSource(String original, Object instance, IJavaElement member) {
+			return (String) Util.invokeMethod(GET_HTML, instance, original, member);
 		}
 	}
 	
@@ -473,7 +483,7 @@ final class PatchFixesHider {
 			}
 			return result;
 		}
-
+		
 		public static boolean isGenerated(org.eclipse.jdt.internal.compiler.ast.ASTNode node) {
 			boolean result = false;
 			try {
@@ -483,7 +493,7 @@ final class PatchFixesHider {
 			}
 			return result;
 		}
-
+		
 		public static boolean isGenerated(org.eclipse.jdt.core.IMember member) {
 			boolean result = false;
 			try {
@@ -773,6 +783,7 @@ final class PatchFixesHider {
 			return newChildren.toArray(new RewriteEvent[0]);
 		}
 		
+		// Eclipse changed a method. Older versions have `getTokenOffset(int, int)` whereas newer ones have `getTokenOffset(TerminalToken, int)`. See https://github.com/eclipse-jdt/eclipse.jdt.core/issues/3303
 		public static int getTokenEndOffsetFixed(TokenScanner scanner, int token, int startOffset, Object domNode) throws CoreException {
 			boolean isGenerated = false;
 			try {
@@ -781,7 +792,37 @@ final class PatchFixesHider {
 				// If this fails, better to break some refactor scripts than to crash eclipse.
 			}
 			if (isGenerated) return -1;
-			return scanner.getTokenEndOffset(token, startOffset);
+			
+			// `scanner.getTokenEndOffset(int, int)` is public so we can just call it directly, except it might not exist (in more recent versions of eclipse).
+			// Ordinarily that means you just write a private static class and shove the code in there to avoid classloader errors, but we're in PatchFixes and we need to be careful about that sort of thing.
+			try {
+				Method m = Permit.getMethod(TokenScanner.class, "getTokenEndOffset", int.class, int.class);
+				return (Integer) Permit.invoke(m, scanner, token, startOffset);
+			} catch (Exception e) {
+				// This is bizarre; we replaced a call to this exact method which strongly suggests it should be there. It's not going to be a nice experience in eclipse to 'break' token offsets,
+				// but breaking token offsets is less dire than just hard crashing the entire editor with an exception.
+				return -1;
+			}
+		}
+		
+		public static int getTokenEndOffsetFixed(TokenScanner scanner, Object token, int startOffset, Object domNode) throws CoreException {
+			boolean isGenerated = false;
+			try {
+				isGenerated = (Boolean) domNode.getClass().getField("$isGenerated").get(domNode);
+			} catch (Exception e) {
+				// If this fails, better to break some refactor scripts than to crash eclipse.
+			}
+			if (isGenerated) return -1;
+			
+			try {
+				Class<?> terminalTokenClass = Class.forName("org.eclipse.jdt.internal.compiler.parser.TerminalToken");
+				Method m = Permit.getMethod(TokenScanner.class, "getTokenEndOffset", terminalTokenClass, int.class);
+				return (Integer) Permit.invoke(m, scanner, token, startOffset);
+			} catch (Exception e) {
+				// This is bizarre; we replaced a call to this exact method which strongly suggests it should be there. It's not going to be a nice experience in eclipse to 'break' token offsets,
+				// but breaking token offsets is less dire than just hard crashing the entire editor with an exception.
+				return -1;
+			}
 		}
 		
 		public static IMethod[] removeGeneratedMethods(IMethod[] methods) throws Exception {
@@ -886,6 +927,14 @@ final class PatchFixesHider {
 			return replace;
 		}
 		
+		public static boolean isEmpty(char[] array) {
+			return array.length == 0;
+		}
+		
+		public static Expression returnNullExpression(Object arg0) {
+			return null;
+		}
+		
 		public static String getRealNodeSource(String original, org.eclipse.jdt.internal.compiler.ast.ASTNode node) {
 			if (!isGenerated(node)) return original;
 			
@@ -936,6 +985,16 @@ final class PatchFixesHider {
 			} catch (Throwable e) {
 				return blocks;
 			}
+		}
+		
+		public static ASTNode findGeneratedNode(ASTNode root, ISourceRange sourceRange, IMethodBinding methodBinding) {
+			ASTNode result = NodeFinder.perform(root, sourceRange);
+			if (result instanceof MethodDeclaration){
+				return result;
+			}
+			
+			CompilationUnit cu = (CompilationUnit) root;
+			return cu.findDeclaringNode(methodBinding.getKey());
 		}
 	}
 	
