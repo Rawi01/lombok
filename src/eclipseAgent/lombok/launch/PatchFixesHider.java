@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2010-2024 The Project Lombok Authors.
+ * Copyright (C) 2010-2025 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -49,6 +49,7 @@ import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
+import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.Name;
 import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.dom.ReturnStatement;
@@ -64,6 +65,7 @@ import org.eclipse.jdt.internal.compiler.ast.Expression;
 import org.eclipse.jdt.internal.compiler.ast.FieldDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.LocalDeclaration;
 import org.eclipse.jdt.internal.compiler.ast.TypeDeclaration;
+import org.eclipse.jdt.internal.compiler.classfmt.ClassFileConstants;
 import org.eclipse.jdt.internal.compiler.lookup.BlockScope;
 import org.eclipse.jdt.internal.compiler.lookup.TypeBinding;
 import org.eclipse.jdt.internal.compiler.parser.Parser;
@@ -995,6 +997,37 @@ final class PatchFixesHider {
 			
 			CompilationUnit cu = (CompilationUnit) root;
 			return cu.findDeclaringNode(methodBinding.getKey());
+		}
+		
+		public static StringBuilder addAnnotationsToFieldDeclarationString(StringBuilder sb, org.eclipse.jdt.core.dom.FieldDeclaration fieldDeclaration) {
+			for (Object modifier : fieldDeclaration.modifiers()) {
+				if (modifier instanceof org.eclipse.jdt.core.dom.Annotation) {
+					org.eclipse.jdt.core.dom.Annotation annotation = (org.eclipse.jdt.core.dom.Annotation) modifier;
+					sb.insert(0, annotation.toString() + " ");
+				}
+			}
+			return sb;
+		}
+		
+		@SuppressWarnings({"unchecked", "rawtypes"})
+		public static void addModifiersToMethod(MethodDeclaration domMethodDeclaration, AbstractMethodDeclaration astMethodDeclaration) {
+			if (!isGenerated(astMethodDeclaration)) return;
+			
+			int modifiers = astMethodDeclaration.modifiers;
+			
+			AST ast = domMethodDeclaration.getAST();
+			List modifierList = domMethodDeclaration.modifiers();
+			if ((modifiers & ClassFileConstants.AccPublic) != 0) modifierList.add(ast.newModifier(Modifier.ModifierKeyword.PUBLIC_KEYWORD));
+			if ((modifiers & ClassFileConstants.AccProtected) != 0) modifierList.add(ast.newModifier(Modifier.ModifierKeyword.PROTECTED_KEYWORD));
+			if ((modifiers & ClassFileConstants.AccPrivate) != 0) modifierList.add(ast.newModifier(Modifier.ModifierKeyword.PRIVATE_KEYWORD));
+			if ((modifiers & ClassFileConstants.AccStatic) != 0) modifierList.add(ast.newModifier(Modifier.ModifierKeyword.STATIC_KEYWORD));
+			if ((modifiers & ClassFileConstants.AccFinal) != 0) modifierList.add(ast.newModifier(Modifier.ModifierKeyword.FINAL_KEYWORD));
+			if ((modifiers & ClassFileConstants.AccAbstract) != 0) modifierList.add(ast.newModifier(Modifier.ModifierKeyword.ABSTRACT_KEYWORD));
+			if ((modifiers & ClassFileConstants.AccSynchronized) != 0) modifierList.add(ast.newModifier(Modifier.ModifierKeyword.SYNCHRONIZED_KEYWORD));
+			if ((modifiers & ClassFileConstants.AccNative) != 0) modifierList.add(ast.newModifier(Modifier.ModifierKeyword.NATIVE_KEYWORD));
+			if ((modifiers & ClassFileConstants.AccStrictfp) != 0) modifierList.add(ast.newModifier(Modifier.ModifierKeyword.STRICTFP_KEYWORD));
+			if ((modifiers & ClassFileConstants.AccTransient) != 0) modifierList.add(ast.newModifier(Modifier.ModifierKeyword.TRANSIENT_KEYWORD));
+			if ((modifiers & ClassFileConstants.AccVolatile) != 0) modifierList.add(ast.newModifier(Modifier.ModifierKeyword.VOLATILE_KEYWORD));
 		}
 	}
 	

@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2009-2024 The Project Lombok Authors.
+ * Copyright (C) 2009-2025 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -101,8 +101,10 @@ public class EclipsePatcher implements AgentLauncher.AgentLaunchable {
 		patchEclipseDebugPatches(sm);
 		patchJavadoc(sm);
 		patchASTConverterLiterals(sm);
+		patchASTConverterModifiers(sm);
 		patchASTNodeSearchUtil(sm);
 		patchFieldInitializer(sm);
+		patchSourceBasedSourceGenerator(sm);
 		
 		patchPostCompileHookEcj(sm);
 		
@@ -1060,6 +1062,15 @@ public class EclipsePatcher implements AgentLauncher.AgentLaunchable {
 				.build());
 	}
 	
+	private static void patchASTConverterModifiers(ScriptManager sm) {
+		sm.addScriptIfWitness(OSGI_TYPES, ScriptBuilder.wrapReturnValue()
+				.target(new MethodTarget("org.eclipse.jdt.core.dom.ASTConverter", "setModifiers", "void", "org.eclipse.jdt.core.dom.MethodDeclaration", "org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration"))
+				.request(StackRequest.PARAM1, StackRequest.PARAM2)
+				.wrapMethod(new Hook("lombok.launch.PatchFixesHider$PatchFixes", "addModifiersToMethod", "void", "org.eclipse.jdt.core.dom.MethodDeclaration", "org.eclipse.jdt.internal.compiler.ast.AbstractMethodDeclaration"))
+				.transplant()
+				.build());
+	}
+	
 	private static void patchASTNodeSearchUtil(ScriptManager sm) {
 		/*
 		 * If an annotation generates more than one method the normal node search returns one of them instead of the right one. 
@@ -1105,6 +1116,15 @@ public class EclipsePatcher implements AgentLauncher.AgentLaunchable {
 			.target(new MethodTarget("org.eclipse.jdt.internal.core.CompilationUnitStructureRequestor", "exitField", "void", "int", "int", "int"))
 			.wrapMethod(new Hook("lombok.launch.PatchFixesHider$FieldInitializer", "overwriteInitializer", "void", "org.eclipse.jdt.internal.core.CompilationUnitStructureRequestor"))
 			.request(StackRequest.THIS)
+			.transplant()
+			.build());
+	}
+	
+	private static void patchSourceBasedSourceGenerator(ScriptManager sm) {
+		sm.addScriptIfWitness(OSGI_TYPES, ScriptBuilder.wrapReturnValue()
+			.target(new MethodTarget("org.eclipse.jdt.internal.debug.eval.ast.engine.SourceBasedSourceGenerator", "buildFieldDeclaration"))
+			.wrapMethod(new Hook("lombok.launch.PatchFixesHider$PatchFixes", "addAnnotationsToFieldDeclarationString", "java.lang.StringBuilder", "java.lang.StringBuilder", "org.eclipse.jdt.core.dom.FieldDeclaration"))
+			.request(StackRequest.RETURN_VALUE, StackRequest.PARAM1)
 			.transplant()
 			.build());
 	}
