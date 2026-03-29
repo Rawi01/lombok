@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2016-2025 The Project Lombok Authors.
+ * Copyright (C) 2016-2026 The Project Lombok Authors.
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -711,7 +711,7 @@ public class PrettyPrinter extends JCTree.Visitor {
 		 */
 		try {
 			innermostArrayBracketsAreVarargs = varargs;
-			if (tree.vartype == null || tree.vartype.pos == -1 || endPos(tree.vartype) == -1) {
+			if (isVar(tree)) {
 				print("var");
 			} else {
 				print(tree.vartype);
@@ -725,6 +725,13 @@ public class PrettyPrinter extends JCTree.Visitor {
 			print(" = ");
 			print(tree.init);
 		}
+	}
+	
+	private boolean isVar(JCVariableDecl tree) {
+		JCExpression vartype = tree.vartype;
+		if (vartype == null || vartype.pos == -1) return true;
+		int endPos = endPos(tree.vartype);
+		return endPos == -1 || endPos == vartype.pos;
 	}
 	
 	private void printEnumMember(JCVariableDecl tree) {
