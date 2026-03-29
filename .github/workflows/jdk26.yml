@@ -1,0 +1,45 @@
+name: JDK26-CI
+
+on:
+  push:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 11 * * *'
+
+jobs:
+  test-javac:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Set up JDK 26
+        uses: actions/setup-java@v4
+        with:
+            java-version: 26
+            distribution: 'zulu'
+        
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ivyCache
+            lib
+          key: ${{ runner.os }}-${{ hashFiles('**/ivy.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-
+
+      - name: Build and copy lombok.patcher
+        run: |
+          cd ..
+          git clone https://github.com/projectlombok/lombok.patcher.git
+          cd lombok.patcher
+          git fetch origin pull/20/head:jdk26
+          git switch jdk26
+          ant dist
+          mkdir -p ../lombok/ivyCache/org.projectlombok/lombok.patcher/jars
+          cp dist/lombok.patcher.jar ../lombok/ivyCache/org.projectlombok/lombok.patcher/jars/lombok.patcher-0.56.jar
+        
+      - name: Run tests
+        run: ant -noinput test.javacCurrent
